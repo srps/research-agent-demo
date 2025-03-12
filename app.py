@@ -55,6 +55,8 @@ if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
 if 'awaiting_clarification' not in st.session_state:
     st.session_state.awaiting_clarification = False
+if 'research_topic' not in st.session_state:
+    st.session_state.research_topic = None
 
 # Initialize our agent components
 planner = ResearchPlannerAgent()
@@ -80,6 +82,7 @@ with st.sidebar:
         st.session_state.iteration_count = 0
         st.session_state.conversation_history = []
         st.session_state.awaiting_clarification = False
+        st.session_state.research_topic = None
         st.rerun()
 
 # Display any error messages
@@ -89,6 +92,9 @@ if st.session_state.error_message:
     st.session_state.error_message = None
 
 # Main interface
+st.markdown("Enter a research topic and click 'Start Research' to begin.")
+research_topic = st.text_input("Enter a research topic:", key="topic_input")
+
 if st.session_state.awaiting_clarification:
     # Display the clarification question in markdown format
     st.markdown("### Clarification Needed")
@@ -109,7 +115,7 @@ if st.session_state.awaiting_clarification:
                 # Re-triage with the updated conversation
                 with st.spinner("Processing your clarification..."):
                     triage_decision = triage_agent.triage_query(
-                        research_topic,
+                        st.session_state.research_topic,
                         openai_api_key,
                         st.session_state.conversation_history
                     )
@@ -145,9 +151,9 @@ if st.session_state.awaiting_clarification:
                 st.session_state.research_plan = None
             st.rerun()
 else:
-    research_topic = st.text_input("Enter a research topic:", key="topic_input")
     
     if st.button("Start Research") and research_topic:
+        st.session_state.research_topic = research_topic
         # Check if OpenAI API key is provided
         if not openai_api_key:
             st.error("Please provide your OpenAI API key in the sidebar.")
@@ -284,7 +290,7 @@ if st.session_state.research_plan:
                                 try:
                                     decision = decision_module.is_research_complete(
                                         st.session_state.research_summaries,
-                                        research_topic,
+                                        st.session_state.research_topic,
                                         openai_api_key
                                     )
                                     
@@ -302,7 +308,7 @@ if st.session_state.research_plan:
                                         # Generate final report
                                         with st.spinner("Generating final report..."):
                                             st.session_state.final_report = report_generator.generate_report(
-                                                research_topic,
+                                                st.session_state.research_topic,
                                                 st.session_state.research_plan,
                                                 st.session_state.research_summaries,
                                                 openai_api_key
@@ -356,7 +362,7 @@ if st.session_state.research_plan:
                             with st.spinner("Generating final report with current findings..."):
                                 try:
                                     st.session_state.final_report = report_generator.generate_report(
-                                        research_topic,
+                                        st.session_state.research_topic,
                                         st.session_state.research_plan,
                                         st.session_state.research_summaries,
                                         openai_api_key
