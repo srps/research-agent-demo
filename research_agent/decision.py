@@ -7,7 +7,7 @@ class DecisionModuleError(Exception):
     """Custom exception for DecisionModule errors"""
     pass
 
-class DecisionModule:
+class DecisionAgent:
     """Determines when enough research has been done to generate a final report."""
     
     def __init__(self):

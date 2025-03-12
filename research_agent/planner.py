@@ -2,24 +2,26 @@ from openai import OpenAI
 import json
 import logging
 from .models import ResearchPlan
+from typing import Optional
 
 class ResearchPlannerError(Exception):
     """Custom exception for ResearchPlanner errors"""
     pass
 
-class ResearchPlanner:
+class ResearchPlannerAgent:
     """Generates a structured research plan for a given topic using an LLM."""
     
     def __init__(self):
         """Initialize the research planner."""
         self.logger = logging.getLogger(__name__)
     
-    def create_plan(self, topic, api_key):
+    def create_plan(self, topic, api_key, clarification=None):
         """Create a research plan with topics and questions for the given topic.
         
         Args:
             topic (str): The research topic to create a plan for
             api_key (str): OpenAI API key
+            clarification (Optional[str]): Additional clarification from the user about the research topic
             
         Returns:
             ResearchPlan: A validated research plan with topics and questions
@@ -31,17 +33,22 @@ class ResearchPlanner:
         client = OpenAI(api_key=api_key)    
         
         # Create a prompt for the LLM
-        prompt = f"""Develop a detailed research plan for the topic: '{topic}', focusing on the following aspects to facilitate research and producing a report on the topic.
+        clarification_text = f"\n\nUser clarification: {clarification}" if clarification else ""
+        
+        prompt = f"""Develop a detailed research plan for the topic: '{topic}'{clarification_text}, focusing on the following aspects to facilitate research and producing a report on the topic.
 
         The research plan should:
-        1. Break down the topic into 5-7 key subtopics to investigate
-        2. For each subtopic, provide 2-3 specific questions to research
+        1. Break down the topic into key subtopics to investigate based on the complexity and scope of the subject
+        2. For each subtopic, provide specific questions to research that are appropriate for that particular subtopic
         3. Arrange these in a logical order, from foundational concepts to more specific aspects
         4. Focus on factual, informative aspects that would be useful for a research report
         5. Ensure each question is specific enough to be used as a search query
+        6. Adjust the depth and breadth of the research plan based on the topic's complexity
         """
         
         self.logger.info(f"Sending research plan request for topic: {topic}")
+        if clarification:
+            self.logger.info(f"With user clarification: {clarification}")
         self.logger.debug(f"Full prompt: {prompt}")
         
         try:

@@ -8,7 +8,7 @@ class ReportGeneratorError(Exception):
     """Custom exception for ReportGenerator errors"""
     pass
 
-class ReportGenerator:
+class ReportGeneratorAgent:
     """Generates a final research report in Markdown format based on collected summaries."""
     
     def __init__(self):

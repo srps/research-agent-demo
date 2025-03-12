@@ -1,22 +1,22 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
-from markdown import markdown
 from datetime import datetime
 
 # Import our custom modules
-from research_agent.planner import ResearchPlanner, ResearchPlannerError
-from research_agent.search import WebSearchModule
-from research_agent.decision import DecisionModule, DecisionModuleError
-from research_agent.report import ReportGenerator, ReportGeneratorError
-import logging
+from research_agent.planner import ResearchPlannerAgent, ResearchPlannerError
+from research_agent.search import WebSearchAgent
+from research_agent.decision import DecisionAgent, DecisionModuleError
+from research_agent.report import ReportGeneratorAgent, ReportGeneratorError
+from research_agent.triage import TriageAgent, TriageAgentError
 
 # Load environment variables
 load_dotenv()
 
 # Page configuration
 st.set_page_config(page_title="Research Agent", layout="wide")
-st.title("Research Agent")
+st.title("Research Agent Demo")
+st.header("Powered by OpenAI Responses API with web search")
 
 # Initialize session state variables if they don't exist
 if 'research_plan' not in st.session_state:
@@ -51,12 +51,17 @@ if 'max_iterations' not in st.session_state:
     st.session_state.max_iterations = 5  # Maximum research iterations to prevent infinite loops
 if 'research_context' not in st.session_state:
     st.session_state.research_context = {}
+if 'conversation_history' not in st.session_state:
+    st.session_state.conversation_history = []
+if 'awaiting_clarification' not in st.session_state:
+    st.session_state.awaiting_clarification = False
 
 # Initialize our agent components
-planner = ResearchPlanner()
-search_module = WebSearchModule()
-decision_module = DecisionModule()
-report_generator = ReportGenerator()
+planner = ResearchPlannerAgent()
+search_module = WebSearchAgent()
+decision_module = DecisionAgent()
+report_generator = ReportGeneratorAgent()
+triage_agent = TriageAgent()
 
 # Sidebar for API key input
 with st.sidebar:
@@ -73,6 +78,8 @@ with st.sidebar:
         st.session_state.previous_gaps = []
         st.session_state.gap_questions = []
         st.session_state.iteration_count = 0
+        st.session_state.conversation_history = []
+        st.session_state.awaiting_clarification = False
         st.rerun()
 
 # Display any error messages
@@ -82,31 +89,104 @@ if st.session_state.error_message:
     st.session_state.error_message = None
 
 # Main interface
-research_topic = st.text_input("Enter a research topic:", key="topic_input")
-
-if st.button("Start Research") and research_topic:
-    # Check if OpenAI API key is provided
-    if not openai_api_key:
-        st.error("Please provide your OpenAI API key in the sidebar.")
-    else:
-        try:
-            with st.spinner("Creating research plan..."):
-                # Generate research plan
-                st.session_state.research_plan = planner.create_plan(research_topic, openai_api_key)
-                st.session_state.research_summaries = []
-                st.session_state.final_report = None
-                st.session_state.research_complete = False
-                st.session_state.current_step = 0
-                st.session_state.previous_gaps = []
-                st.session_state.gap_questions = []
-                st.session_state.iteration_count = 0
-        except ResearchPlannerError as e:
-            st.session_state.error_message = f"Failed to create research plan: {str(e)}"
-            st.session_state.research_plan = None
-        except Exception as e:
-            st.session_state.error_message = f"An unexpected error occurred: {str(e)}"
-            st.session_state.research_plan = None
-        st.rerun()
+if st.session_state.awaiting_clarification:
+    # Display the clarification question in markdown format
+    st.markdown("### Clarification Needed")
+    st.markdown(st.session_state.conversation_history[-1]["content"])
+    
+    # Create a dedicated input field for clarification
+    clarification_response = st.text_input("Your clarification:", key="clarification_input")
+    submit_button = st.button("Submit Clarification")
+    
+    if submit_button and clarification_response:
+        if not openai_api_key:
+            st.error("Please provide your OpenAI API key in the sidebar.")
+        else:
+            try:
+                # Add user's clarification to conversation history
+                st.session_state.conversation_history.append({"role": "user", "content": clarification_response})
+                
+                # Re-triage with the updated conversation
+                with st.spinner("Processing your clarification..."):
+                    triage_decision = triage_agent.triage_query(
+                        research_topic,
+                        openai_api_key,
+                        st.session_state.conversation_history
+                    )
+                    
+                    if triage_decision.status == "valid":
+                        # Valid research topic after clarification
+                        st.session_state.awaiting_clarification = False
+                        with st.spinner("Creating research plan..."):
+                            # Generate research plan with original topic and clarification
+                            original_topic = st.session_state.conversation_history[0]["content"]
+                            st.session_state.research_plan = planner.create_plan(original_topic, openai_api_key, clarification=clarification_response)
+                            st.session_state.research_summaries = []
+                            st.session_state.final_report = None
+                            st.session_state.research_complete = False
+                            st.session_state.current_step = 0
+                            st.session_state.previous_gaps = []
+                            st.session_state.gap_questions = []
+                            st.session_state.iteration_count = 0
+                    elif triage_decision.status == "needs_clarification":
+                        # Still needs clarification
+                        st.session_state.awaiting_clarification = True
+                    else:  # Invalid
+                        st.error(f"Invalid research request: {triage_decision.reasoning}")
+                        st.session_state.awaiting_clarification = False
+                        st.session_state.conversation_history = []
+            except TriageAgentError as e:
+                st.session_state.error_message = f"Error processing your request: {str(e)}"
+            except ResearchPlannerError as e:
+                st.session_state.error_message = f"Failed to create research plan: {str(e)}"
+                st.session_state.research_plan = None
+            except Exception as e:
+                st.session_state.error_message = f"An unexpected error occurred: {str(e)}"
+                st.session_state.research_plan = None
+            st.rerun()
+else:
+    research_topic = st.text_input("Enter a research topic:", key="topic_input")
+    
+    if st.button("Start Research") and research_topic:
+        # Check if OpenAI API key is provided
+        if not openai_api_key:
+            st.error("Please provide your OpenAI API key in the sidebar.")
+        else:
+            try:
+                # First, triage the user's query
+                with st.spinner("Analyzing your request..."):
+                    # Add the query to conversation history
+                    st.session_state.conversation_history = [{"role": "user", "content": research_topic}]
+                    
+                    # Triage the query
+                    triage_decision = triage_agent.triage_query(research_topic, openai_api_key)
+                    
+                    if triage_decision.status == "valid":
+                        # Valid research topic, proceed with research plan
+                        with st.spinner("Creating research plan..."):
+                            # Generate research plan
+                            st.session_state.research_plan = planner.create_plan(research_topic, openai_api_key)
+                            st.session_state.research_summaries = []
+                            st.session_state.final_report = None
+                            st.session_state.research_complete = False
+                            st.session_state.current_step = 0
+                            st.session_state.previous_gaps = []
+                            st.session_state.gap_questions = []
+                            st.session_state.iteration_count = 0
+                    elif triage_decision.status == "needs_clarification":
+                        # Need clarification from user
+                        st.session_state.awaiting_clarification = True
+                    else:  # Invalid
+                        st.error(f"Invalid research request: {triage_decision.reasoning}")
+            except TriageAgentError as e:
+                st.session_state.error_message = f"Error processing your request: {str(e)}"
+            except ResearchPlannerError as e:
+                st.session_state.error_message = f"Failed to create research plan: {str(e)}"
+                st.session_state.research_plan = None
+            except Exception as e:
+                st.session_state.error_message = f"An unexpected error occurred: {str(e)}"
+                st.session_state.research_plan = None
+            st.rerun()
 
 # Display research plan if available
 if st.session_state.research_plan:
@@ -322,6 +402,3 @@ if st.session_state.research_plan:
         st.subheader("Final Research Report")
         st.markdown(st.session_state.final_report)
 
-# Footer
-st.markdown("---")
-st.markdown("Research Agent Demo - Powered by OpenAI with integrated web search")

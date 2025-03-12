@@ -4,7 +4,7 @@ import json
 import logging
 from typing import List, Dict, Any, Optional
 
-class WebSearchModule:
+class WebSearchAgent:
     """Handles web searches and summarization of search results."""
     
     def __init__(self):

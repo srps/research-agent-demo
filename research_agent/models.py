@@ -39,9 +39,7 @@ class ResearchPlan(BaseModel):
     """Represents a complete research plan with multiple topics and their questions."""
     topics: List[ResearchTopic] = Annotated[Field(
         ...,
-        description="A list of research topics to investigate",
-        min_items=5,
-        max_items=7
+        description="A list of research topics to investigate"
     ), AfterValidator("validate_topics")]
     
     def validate_topics(v: List[ResearchTopic]):
